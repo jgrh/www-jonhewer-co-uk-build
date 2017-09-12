@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 import boto3
 import botocore
@@ -45,7 +45,7 @@ def sync(source_dir, to_bucket):
             key = path.relative_to(source_dir).as_posix()
             mime_type = mimetypes.guess_type(filename)[0]
             print('Uploading ', key)
-            s3.sync_file(Filename=filename, Bucket=to_bucket, Key=key, ExtraArgs={ 'ACL': 'public-read', 'ContentType': mime_type })
+            s3.upload_file(Filename=filename, Bucket=to_bucket, Key=key, ExtraArgs={ 'ACL': 'public-read', 'ContentType': mime_type })
     list_objects = s3.get_paginator('list_objects')
     for page in list_objects.paginate(Bucket=to_bucket):
         for key in map(lambda x: x['Key'], page['Contents']):

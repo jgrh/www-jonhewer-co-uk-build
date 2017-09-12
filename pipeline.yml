@@ -1,0 +1,242 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  GitHubToken:
+    Description: GitHub OAuth token
+    Type: String
+  ServiceName:
+    Description: The name of the service
+    Type: String
+Resources:
+  BuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/docker:1.12.1
+        PrivilegedMode: true
+        Type: LINUX_CONTAINER
+      Name: !Sub '${ServiceName}-build'
+      ServiceRole: !GetAtt [BuildRole, Arn]
+      Source:
+        BuildSpec: !Sub
+          - |
+            version: 0.2
+            phases:
+              pre_build:
+                commands:
+                  - $(aws ecr get-login --region eu-west-1)
+                  - docker pull ${RepositoryUri}:latest
+              build:
+                commands:
+                  - docker run --volume $(pwd):/src --workdir /src ${RepositoryUri}:latest /bin/bash -c "npm install && npm run clean-build"
+            artifacts:
+              files:
+                - "**/*"
+              base-directory: target
+          - RepositoryUri:
+              Fn::ImportValue: !Sub '${ServiceName}::BuildImageContainerRepositoryUri'
+        Type: CODEPIPELINE
+      TimeoutInMinutes: 10
+  BuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+            - 'sts:AssumeRole'
+          Effect: Allow
+          Principal:
+            Service: [codebuild.amazonaws.com]
+        Version: '2012-10-17'
+      Path: /
+      Policies:
+        - PolicyName: !Sub '${ServiceName}-build-policy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Effect: Allow
+                Resource: '*'
+              - Action:
+                  - 's3:GetObject'
+                  - 's3:GetObjectVersion'
+                  - 's3:PutObject'
+                Effect: Allow
+                Resource: !Sub
+                  - ${Arn}/*
+                  - Arn: !GetAtt [PipelineArtifactBucket, Arn]
+              - Action:
+                  - 'ecr:BatchCheckLayerAvailability'
+                  - 'ecr:BatchGetImage'
+                  - 'ecr:GetDownloadUrlForLayer'
+                Effect: Allow
+                Resource:
+                  Fn::ImportValue: !Sub '${ServiceName}::BuildImageContainerRepositoryArn'
+              - Action:
+                  - 'ecr:GetAuthorizationToken'
+                Effect: Allow
+                Resource: '*'
+  DeployFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket:
+          Fn::ImportValue: !Sub '${ServiceName}::PipelineLambdaBucketName'
+        S3Key: deploy.zip
+      FunctionName: !Sub '${ServiceName}-deploy'
+      Handler: deploy.handler
+      Role: !GetAtt [DeployRole, Arn]
+      Runtime: python3.6
+      Timeout: 60
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+            - 'sts:AssumeRole'
+          Effect: Allow
+          Principal:
+            Service: [lambda.amazonaws.com]
+        Version: '2012-10-17'
+      Path: /
+      Policies:
+        - PolicyName: !Sub '${ServiceName}-deploy-policy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Effect: Allow
+                Resource: '*'
+              - Action:
+                  - 'codepipeline:PutJobFailureResult'
+                  - 'codepipeline:PutJobSuccessResult'
+                Effect: Allow
+                Resource: '*'
+              - Action:
+                  - 's3:ListBucket'
+                Effect: Allow
+                Resource:
+                  Fn::ImportValue: !Sub '${ServiceName}::WebsiteBucketArn'
+              - Action:
+                  - 's3:*'
+                Effect: Allow
+                Resource: !Join [/, [!GetAtt [WebsiteBucket, Arn], '*']]
+                Resource: !Sub
+                  - ${Arn}/*
+                  - Arn:
+                      Fn::ImportValue: !Sub '${ServiceName}::WebsiteBucketArn'
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      ArtifactStore:
+        Location: !Ref 'PipelineArtifactBucket'
+        Type: S3
+      DisableInboundStageTransitions: []
+      Name: !Sub '${ServiceName}-pipeline'
+      RoleArn: !GetAtt [PipelineRole, Arn]
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: GitHub
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Provider: GitHub
+                Version: '1'
+              Configuration:
+                Branch: master
+                OAuthToken: !Ref 'GitHubToken'
+                Owner: jgrh
+                PollForSourceChanges: 'true'
+                Repo: www-jonhewer-co-uk
+              OutputArtifacts:
+                - Name: source
+              RunOrder: '1'
+        - Name: Build
+          Actions:
+            - Name: CodeBuild
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref 'BuildProject'
+              InputArtifacts:
+                - Name: source
+              OutputArtifacts:
+                - Name: build
+              RunOrder: '1'
+        - Name: Deploy
+          Actions:
+            - Name: Lambda
+              ActionTypeId:
+                Category: Invoke
+                Owner: AWS
+                Provider: Lambda
+                Version: '1'
+              Configuration:
+                FunctionName: !Ref 'DeployFunction'
+                UserParameters:
+                  Fn::ImportValue: !Sub '${ServiceName}::WebsiteBucketName'
+              InputArtifacts:
+                - Name: build
+              OutputArtifacts: []
+              RunOrder: '1'
+  PipelineArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ServiceName}-pipeline-artifacts'
+      LifecycleConfiguration:
+        Rules:
+          - ExpirationInDays: 1
+            Status: Enabled
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action: ['sts:AssumeRole']
+          Effect: Allow
+          Principal:
+            Service: [codepipeline.amazonaws.com]
+        Version: '2012-10-17'
+      Path: /
+      Policies:
+        - PolicyName: !Sub '${ServiceName}-pipeline-policy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Action:
+                  - 'codebuild:BatchGetBuilds'
+                  - 'codebuild:StartBuild'
+                Effect: Allow
+                Resource: '*'
+              - Action:
+                  - 'iam:PassRole'
+                Effect: Allow
+                Resource: '*'
+              - Action:
+                  - 'lambda:InvokeFunction'
+                  - 'lambda:ListFunctions'
+                Effect: Allow
+                Resource: '*'
+              - Action:
+                  - 's3:*'
+                Effect: Allow
+                Resource: !GetAtt [PipelineArtifactBucket, Arn]
+              - Action:
+                  - 's3:*'
+                Effect: Allow
+                Resource: !Sub
+                  - ${Arn}/*
+                  - Arn: !GetAtt [PipelineArtifactBucket, Arn]

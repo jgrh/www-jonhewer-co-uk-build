@@ -1,0 +1,33 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  ServiceName:
+    Description: The name of the service
+    Type: String
+Outputs:
+  BuildImageContainerRepositoryArn:
+    Export:
+      Name: !Sub '${ServiceName}::BuildImageContainerRepositoryArn'
+    Value: !GetAtt [BuildImageContainerRepository, Arn]
+  BuildImageContainerRepositoryName:
+    Export:
+      Name: !Sub '${ServiceName}::BuildImageContainerRepositoryName'
+    Value: !Ref 'BuildImageContainerRepository'
+  BuildImageContainerRepositoryUri:
+    Export:
+      Name: !Sub '${ServiceName}::BuildImageContainerRepositoryUri'
+    Value: !Sub
+      - ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${RepositoryName}
+      - RepositoryName: !Ref 'BuildImageContainerRepository'
+  PipelineLambdaBucketName:
+    Export:
+      Name: !Sub '${ServiceName}::PipelineLambdaBucketName'
+    Value: !Ref 'PipelineLambdaBucket'
+Resources:
+  BuildImageContainerRepository:
+    Type: 'AWS::ECR::Repository'
+    Properties:
+      RepositoryName: !Sub '${ServiceName}-build'
+  PipelineLambdaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ServiceName}-pipeline-lambdas'
