@@ -6,6 +6,9 @@ Parameters:
   ServiceName:
     Description: The name of the service
     Type: String
+  WebsiteHostname:
+    Description: The hostname of the website
+    Type: String
 Resources:
   BuildProject:
     Type: AWS::CodeBuild::Project
@@ -103,10 +106,15 @@ Resources:
           Effect: Allow
           Principal:
             Service: [lambda.amazonaws.com]
+        - Action:
+            - 'sts:AssumeRole'
+          Effect: Allow
+          Principal:
+            Service: [cloudformation.amazonaws.com]
         Version: '2012-10-17'
       Path: /
       Policies:
-        - PolicyName: !Sub '${ServiceName}-deploy-policy'
+        - PolicyName: !Sub '${ServiceName}-deploy-site-policy'
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -122,18 +130,13 @@ Resources:
                 Effect: Allow
                 Resource: '*'
               - Action:
-                  - 's3:ListBucket'
+                  - 's3:*'
                 Effect: Allow
-                Resource:
-                  Fn::ImportValue: !Sub '${ServiceName}::WebsiteBucketArn'
+                Resource: !Sub 'arn:aws:s3:::${WebsiteHostname}'
               - Action:
                   - 's3:*'
                 Effect: Allow
-                Resource: !Join [/, [!GetAtt [WebsiteBucket, Arn], '*']]
-                Resource: !Sub
-                  - ${Arn}/*
-                  - Arn:
-                      Fn::ImportValue: !Sub '${ServiceName}::WebsiteBucketArn'
+                Resource: !Sub 'arn:aws:s3:::${WebsiteHostname}/*'
   Pipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
@@ -163,7 +166,7 @@ Resources:
               RunOrder: '1'
         - Name: Build
           Actions:
-            - Name: CodeBuild
+            - Name: BuildSite
               ActionTypeId:
                 Category: Build
                 Owner: AWS
@@ -178,7 +181,27 @@ Resources:
               RunOrder: '1'
         - Name: Deploy
           Actions:
-            - Name: Lambda
+            - Name: DeployStack
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              Configuration:
+                ActionMode: CREATE_UPDATE
+                ParameterOverrides: !Sub |
+                  {
+                      "ServiceName": "${ServiceName}",
+                      "WebsiteHostname": "${WebsiteHostname}"
+                  }
+                RoleArn: !GetAtt [DeployRole, Arn]
+                StackName: !Sub '${ServiceName}-environment'
+                TemplatePath: 'source::cloudformation.yml'
+              InputArtifacts:
+                - Name: source
+              OutputArtifacts: []
+              RunOrder: '1'
+            - Name: DeploySite
               ActionTypeId:
                 Category: Invoke
                 Owner: AWS
@@ -186,12 +209,11 @@ Resources:
                 Version: '1'
               Configuration:
                 FunctionName: !Ref 'DeployFunction'
-                UserParameters:
-                  Fn::ImportValue: !Sub '${ServiceName}::WebsiteBucketName'
+                UserParameters: !Ref 'WebsiteHostname'
               InputArtifacts:
                 - Name: build
               OutputArtifacts: []
-              RunOrder: '1'
+              RunOrder: '2'
   PipelineArtifactBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -216,6 +238,12 @@ Resources:
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
+              - Action:
+                  - 'cloudformation:CreateStack'
+                  - 'cloudformation:DescribeStacks'
+                  - 'cloudformation:UpdateStack'
+                Effect: Allow
+                Resource: '*'
               - Action:
                   - 'codebuild:BatchGetBuilds'
                   - 'codebuild:StartBuild'

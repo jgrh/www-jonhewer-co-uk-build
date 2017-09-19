@@ -78,16 +78,11 @@ def setup(github_token, service_name, website_hostname):
 
     build_and_push_docker_image('build.Dockerfile', outputs['BuildImageContainerRepositoryUri'])
 
-    create_or_update(service_name + '-environment', 'environment.yml',
-                     [
-                         { 'ParameterKey': 'ServiceName', 'ParameterValue': service_name },
-                         { 'ParameterKey': 'WebsiteHostname', 'ParameterValue': website_hostname }
-                     ])
-
     create_or_update(service_name + '-pipeline', 'pipeline.yml',
                      [
                          { 'ParameterKey': 'GitHubToken', 'ParameterValue': github_token },
-                         { 'ParameterKey': 'ServiceName', 'ParameterValue': service_name }
+                         { 'ParameterKey': 'ServiceName', 'ParameterValue': service_name },
+                         { 'ParameterKey': 'WebsiteHostname', 'ParameterValue': website_hostname }
                      ],
                      capabilities=['CAPABILITY_IAM'])
 
