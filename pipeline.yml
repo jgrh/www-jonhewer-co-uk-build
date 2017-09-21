@@ -51,7 +51,8 @@ Resources:
             - 'sts:AssumeRole'
           Effect: Allow
           Principal:
-            Service: [codebuild.amazonaws.com]
+            Service:
+              - 'codebuild.amazonaws.com'
         Version: '2012-10-17'
       Path: /
       Policies:
@@ -64,7 +65,7 @@ Resources:
                   - 'logs:CreateLogStream'
                   - 'logs:PutLogEvents'
                 Effect: Allow
-                Resource: '*'
+                Resource: !Sub 'arn:aws:logs:*:*:log-group:/aws/codebuild/${ServiceName}*'
               - Action:
                   - 's3:GetObject'
                   - 's3:GetObjectVersion'
@@ -105,16 +106,13 @@ Resources:
             - 'sts:AssumeRole'
           Effect: Allow
           Principal:
-            Service: [lambda.amazonaws.com]
-        - Action:
-            - 'sts:AssumeRole'
-          Effect: Allow
-          Principal:
-            Service: [cloudformation.amazonaws.com]
+            Service:
+              - 'cloudformation.amazonaws.com'
+              - 'lambda.amazonaws.com'
         Version: '2012-10-17'
       Path: /
       Policies:
-        - PolicyName: !Sub '${ServiceName}-deploy-site-policy'
+        - PolicyName: !Sub '${ServiceName}-deploy-policy'
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -123,18 +121,20 @@ Resources:
                   - 'logs:CreateLogStream'
                   - 'logs:PutLogEvents'
                 Effect: Allow
-                Resource: '*'
+                Resource: !Sub 'arn:aws:logs:*:*:log-group:/aws/lambda/${ServiceName}*'
               - Action:
                   - 'codepipeline:PutJobFailureResult'
                   - 'codepipeline:PutJobSuccessResult'
                 Effect: Allow
                 Resource: '*'
               - Action:
-                  - 's3:*'
+                  - 's3:ListBucket'
                 Effect: Allow
                 Resource: !Sub 'arn:aws:s3:::${WebsiteHostname}'
               - Action:
-                  - 's3:*'
+                  - 's3:DeleteObject'
+                  - 's3:PutObject'
+                  - 's3:PutObjectAcl'
                 Effect: Allow
                 Resource: !Sub 'arn:aws:s3:::${WebsiteHostname}/*'
   Pipeline:
@@ -227,10 +227,12 @@ Resources:
     Properties:
       AssumeRolePolicyDocument:
         Statement:
-        - Action: ['sts:AssumeRole']
+        - Action: 
+            - 'sts:AssumeRole'
           Effect: Allow
           Principal:
-            Service: [codepipeline.amazonaws.com]
+            Service:
+              - 'codepipeline.amazonaws.com'
         Version: '2012-10-17'
       Path: /
       Policies:
@@ -243,27 +245,27 @@ Resources:
                   - 'cloudformation:DescribeStacks'
                   - 'cloudformation:UpdateStack'
                 Effect: Allow
-                Resource: '*'
+                Resource: !Sub 'arn:aws:cloudformation:*:*:stack/${ServiceName}*'
               - Action:
                   - 'codebuild:BatchGetBuilds'
                   - 'codebuild:StartBuild'
                 Effect: Allow
-                Resource: '*'
+                Resource: !Sub 'arn:aws:codebuild:*:*:project/${ServiceName}*'
               - Action:
                   - 'iam:PassRole'
                 Effect: Allow
-                Resource: '*'
+                Resource: !Sub 'arn:aws:iam::*:role/${ServiceName}*'
               - Action:
-                  - 'lambda:InvokeFunction'
                   - 'lambda:ListFunctions'
                 Effect: Allow
                 Resource: '*'
               - Action:
-                  - 's3:*'
+                  - 'lambda:InvokeFunction'
                 Effect: Allow
-                Resource: !GetAtt [PipelineArtifactBucket, Arn]
+                Resource: !Sub 'arn:aws:lambda:*:*:function:${ServiceName}*'
               - Action:
-                  - 's3:*'
+                  - 's3:GetObject'
+                  - 's3:PutObject'
                 Effect: Allow
                 Resource: !Sub
                   - ${Arn}/*
