@@ -128,7 +128,10 @@ Resources:
                 Effect: Allow
                 Resource: '*'
               - Action:
+                  - 's3:CreateBucket'
+                  - 's3:DeleteBucket'
                   - 's3:ListBucket'
+                  - 's3:PutBucketWebsite'
                 Effect: Allow
                 Resource: !Sub 'arn:aws:s3:::${WebsiteHostname}'
               - Action:
