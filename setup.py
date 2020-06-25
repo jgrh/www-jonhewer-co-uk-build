@@ -63,8 +63,9 @@ def build_and_push_docker_image(dockerfile, image_uri):
     print('Building Docker image:', image_uri)
     build_result = subprocess.run(['docker', 'build', '-f', 'dockerfiles/' + dockerfile, '-t', image_uri + ':latest', '.'], check=True)
     print('Logging into ECR')
-    login_cmd = subprocess.check_output(['aws', 'ecr', 'get-login', '--no-include-email', '--region', 'eu-west-1'])
-    subprocess.run(login_cmd.decode('utf-8').strip('\n').split(' '), check=True)
+    login = subprocess.Popen(['aws', 'ecr', 'get-login-password', '--region', 'eu-west-1'], stdout=subprocess.PIPE)
+    login_result = subprocess.run(['docker', 'login', '--username', 'AWS', '--password-stdin', image_uri.split('/')[0]], stdin=login.stdout, check=True)
+    login.wait()
     print('Pushing docker image:', image_uri)
     push_result = subprocess.run(['docker', 'push', image_uri + ':latest'], check=True)
 
@@ -76,7 +77,7 @@ def setup(github_token, service_name, website_hostname):
 
     upload_lambda('deploy', outputs['PipelineLambdaBucketName'])
 
-    build_and_push_docker_image('build.Dockerfile', outputs['BuildImageContainerRepositoryUri'])
+    build_and_push_docker_image('Dockerfile', outputs['BuildImageContainerRepositoryUri'])
 
     create_or_update(service_name + '-pipeline', 'pipeline.yml',
                      [
