@@ -17,7 +17,7 @@ Resources:
         Type: CODEPIPELINE
       Environment:
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/docker:1.12.1
+        Image: aws/codebuild/standard:4.0
         PrivilegedMode: true
         Type: LINUX_CONTAINER
       Name: !Sub '${ServiceName}-build'
@@ -29,7 +29,7 @@ Resources:
             phases:
               pre_build:
                 commands:
-                  - $(aws ecr get-login --region eu-west-1)
+                  - aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin ${RepositoryUri}
                   - docker pull ${RepositoryUri}:latest
               build:
                 commands:
