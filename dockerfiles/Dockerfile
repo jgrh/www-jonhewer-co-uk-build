@@ -21,3 +21,7 @@ RUN apt-get update && \
 RUN apt-get update && \
     apt-get install -y graphicsmagick --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && \
+    apt-get install -y git --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/*
