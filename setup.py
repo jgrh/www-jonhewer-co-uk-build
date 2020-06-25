@@ -64,7 +64,7 @@ def build_and_push_docker_image(dockerfile, image_uri):
     build_result = subprocess.run(['docker', 'build', '-f', 'dockerfiles/' + dockerfile, '-t', image_uri + ':latest', '.'], check=True)
     print('Logging into ECR')
     login = subprocess.Popen(['aws', 'ecr', 'get-login-password', '--region', 'eu-west-1'], stdout=subprocess.PIPE)
-    login_result = subprocess.run(['docker', 'login', '--username', 'AWS', '--password-stdin', image_uri.split('/')[0]], stdin=login.stdout, check=True)
+    login_result = subprocess.run(['docker', 'login', '--username', 'AWS', '--password-stdin', image_uri], stdin=login.stdout, check=True)
     login.wait()
     print('Pushing docker image:', image_uri)
     push_result = subprocess.run(['docker', 'push', image_uri + ':latest'], check=True)
